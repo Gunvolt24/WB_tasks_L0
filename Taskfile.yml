@@ -1,0 +1,119 @@
+version: '3'
+
+vars:
+  COMPOSE: docker compose
+  API: http://localhost:8081
+  UID: b563feb7b2b84b6test
+  SAMPLE_FILE: kafka-model.json
+
+tasks:
+
+  # --- инфраструктура ---
+  up:
+    desc: Build+Up всех сервисов (postgres, kafka(+ui), app, prometheus, grafana, migrate)
+    cmds:
+      - "{{.COMPOSE}} up -d --build"
+
+  down:
+    desc: Остановить и удалить всё с volume'ами
+    cmds:
+      - "{{.COMPOSE}} down -v"
+
+  ps:
+    desc: Статус контейнеров
+    cmds:
+      - "{{.COMPOSE}} ps"
+
+  logs:app:
+    desc: Тейл логов приложения
+    cmds:
+      - "{{.COMPOSE}} logs -f app"
+
+  # --- БД ---
+  db:tables:
+    desc: Показать таблицы в Postgres
+    cmds:
+      - "{{.COMPOSE}} exec postgres psql -U app -d orders -c '\\dt'"
+
+  db:count:
+    desc: Кол-во заказов в БД
+    cmds:
+      - "{{.COMPOSE}} exec postgres psql -U app -d orders -c 'SELECT count(*) FROM orders;'"
+
+  # --- API ---
+  api:ping:
+    desc: /ping
+    cmds:
+      - "curl -s {{.API}}/ping || true"
+
+  api:get:
+    desc: GET /order/:id (UID={{.UID}} по умолчанию)
+    cmds:
+      - "curl -s {{.API}}/order/{{.UID}} | python -m json.tool || true"
+
+  metrics:
+    desc: Ключевые метрики Kafka
+    cmds:
+      - "curl -s {{.API}}/metrics | grep -E 'kafka_messages_(consumed|processed|failed)_total' || true"
+
+  # --- Kafka ---
+  kafka:topics:
+    desc: Список топиков
+    cmds:
+      - "{{.COMPOSE}} exec kafka bash -lc 'kafka-topics --bootstrap-server kafka:9092 --list'"
+
+  kafka:lag:
+    desc: Состояние consumer-группы orders-service
+    cmds:
+      - "{{.COMPOSE}} exec kafka bash -lc 'kafka-consumer-groups --bootstrap-server kafka:9092 --group orders-service --describe'"
+
+  kafka:reset:
+    desc: Сбросить оффсеты группы на начало (ОСТОРОЖНО!)
+    cmds:
+      - "{{.COMPOSE}} exec kafka bash -lc 'kafka-consumer-groups --bootstrap-server kafka:9092 --group orders-service --topic orders --reset-offsets --to-earliest --execute'"
+
+  kafka:produce:sample:
+    desc: Отправить один валидный JSON из файла ({{.SAMPLE_FILE}})
+    cmds:
+      - "{{.COMPOSE}} exec -T kafka bash -lc 'kafka-console-producer --bootstrap-server kafka:9092 --topic orders' < {{.SAMPLE_FILE}}"
+
+  kafka:produce:customer:
+    desc: "Отправить 1 заказ для CUSTOMER (по умолчанию user-777)"
+    vars:
+      CUSTOMER: '{{.CUSTOMER | default "user-777"}}'
+      TS:
+        sh: date +%s
+    cmds:
+      - |
+        printf '{"order_uid":"cust-%s","track_number":"T-%s","entry":"WBIL","delivery":{"name":"N","phone":"+1","zip":"1","city":"C","address":"A","region":"R","email":"test@example.com"},"payment":{"transaction":"cust-%s","request_id":"","currency":"USD","provider":"wbpay","amount":1,"payment_dt":1,"bank":"b","delivery_cost":0,"goods_total":1,"custom_fee":0},"items":[{"chrt_id":1,"track_number":"T-%s","price":1,"rid":"rid1","name":"x","sale":0,"size":"0","total_price":1,"nm_id":1,"brand":"b","status":200}],"locale":"en","internal_signature":"","customer_id":"{{.CUSTOMER}}","delivery_service":"d","shardkey":"9","sm_id":1,"date_created":"2021-11-26T06:22:19Z","oof_shard":"1"}\n' \
+          "{{.TS}}" "{{.TS}}" "{{.TS}}" "{{.TS}}" \
+        | {{.COMPOSE}} exec -T kafka bash -lc 'kafka-console-producer --bootstrap-server kafka:9092 --topic orders'
+        
+
+  kafka:produce:invalid:
+    desc: Отправить 1 битое сообщение (для инкремента ошибок)
+    cmds:
+      - |
+        bash -lc 'printf "{\"order_uid\":123" | {{.COMPOSE}} exec -T kafka bash -lc '\''kafka-console-producer --bootstrap-server kafka:9092 --topic orders'\'''
+
+  kafka:produce:valid-batch:
+    desc: Отправить 3 валидных сообщения (встроенный fixture)
+    cmds:
+      - |
+        {{.COMPOSE}} exec -T kafka bash -lc 'cat > /tmp/valid.jsonl << "EOF"
+        {"order_uid":"ok-001","track_number":"T1","entry":"WBIL","delivery":{"name":"N","phone":"+1","zip":"1","city":"C","address":"A","region":"R","email":"test@example.com"},"payment":{"transaction":"ok-001","request_id":"","currency":"USD","provider":"wbpay","amount":1,"payment_dt":1,"bank":"b","delivery_cost":0,"goods_total":1,"custom_fee":0},"items":[{"chrt_id":1,"track_number":"T1","price":1,"rid":"rid1","name":"x","sale":0,"size":"0","total_price":1,"nm_id":1,"brand":"b","status":200}],"locale":"en","internal_signature":"","customer_id":"c","delivery_service":"d","shardkey":"9","sm_id":1,"date_created":"2021-11-26T06:22:19Z","oof_shard":"1"}
+        {"order_uid":"ok-002","track_number":"T2","entry":"WBIL","delivery":{"name":"N","phone":"+1","zip":"1","city":"C","address":"A","region":"R","email":"test@example.com"},"payment":{"transaction":"ok-002","request_id":"","currency":"USD","provider":"wbpay","amount":1,"payment_dt":1,"bank":"b","delivery_cost":0,"goods_total":1,"custom_fee":0},"items":[{"chrt_id":2,"track_number":"T2","price":1,"rid":"rid2","name":"x","sale":0,"size":"0","total_price":1,"nm_id":2,"brand":"b","status":200}],"locale":"en","internal_signature":"","customer_id":"c","delivery_service":"d","shardkey":"9","sm_id":1,"date_created":"2021-11-26T06:22:19Z","oof_shard":"1"}
+        {"order_uid":"ok-003","track_number":"T3","entry":"WBIL","delivery":{"name":"N","phone":"+1","zip":"1","city":"C","address":"A","region":"R","email":"test@example.com"},"payment":{"transaction":"ok-003","request_id":"","currency":"USD","provider":"wbpay","amount":1,"payment_dt":1,"bank":"b","delivery_cost":0,"goods_total":1,"custom_fee":0},"items":[{"chrt_id":3,"track_number":"T3","price":1,"rid":"rid3","name":"x","sale":0,"size":"0","total_price":1,"nm_id":3,"brand":"b","status":200}],"locale":"en","internal_signature":"","customer_id":"c","delivery_service":"d","shardkey":"9","sm_id":1,"date_created":"2021-11-26T06:22:19Z","oof_shard":"1"}
+        EOF
+        kafka-console-producer --bootstrap-server kafka:9092 --topic orders < /tmp/valid.jsonl'
+
+  # --- Быстрый сценарий ---
+  demo:
+    desc: Поднять всё, отправить sample, проверить API/метрики/лаг
+    cmds:
+      - task: up
+      - task: kafka:topics
+      - task: kafka:produce:sample
+      - task: api:get
+      - task: metrics
+      - task: kafka:lag

@@ -83,7 +83,6 @@ func (h *Handler) listOrdersByCustomer(c *gin.Context) {
 		return
 	}
 
-	// Всегда 200 с массивом (пусть даже пустым)
 	c.JSON(http.StatusOK, orders)
 }
 

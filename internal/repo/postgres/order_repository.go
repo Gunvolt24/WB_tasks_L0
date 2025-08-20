@@ -198,36 +198,48 @@ func (r *OrderRepository) GetByUID(ctx context.Context, uid string) (*domain.Ord
 }
 
 func (r *OrderRepository) ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]*domain.Order, error) {
-    if limit <= 0 { limit = 20 }
-    if offset < 0 { offset = 0 }
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
 
-    rows, err := r.pool.Query(ctx, `
+	rows, err := r.pool.Query(ctx, `
         SELECT order_uid
         FROM orders
         WHERE customer_id = $1
         ORDER BY date_created DESC
         LIMIT $2 OFFSET $3
     `, customerID, limit, offset)
-    if err != nil { return nil, err }
-    defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-    var uids []string
-    for rows.Next() {
-        var uid string
-        if err := rows.Scan(&uid); err != nil {
-            return nil, err
-        }
-        uids = append(uids, uid)
-    }
-    if err := rows.Err(); err != nil { return nil, err }
+	var uids []string
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		uids = append(uids, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-    result := make([]*domain.Order, 0, len(uids))
-    for _, uid := range uids {
-        o, err := r.GetByUID(ctx, uid)
-        if err != nil { return nil, err }
-        if o != nil { result = append(result, o) }
-    }
-    return result, nil
+	result := make([]*domain.Order, 0, len(uids))
+	for _, uid := range uids {
+		o, err := r.GetByUID(ctx, uid)
+		if err != nil {
+			return nil, err
+		}
+		if o != nil {
+			result = append(result, o)
+		}
+	}
+	return result, nil
 }
 
 func (r *OrderRepository) LastN(ctx context.Context, n int) ([]*domain.Order, error) {

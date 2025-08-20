@@ -74,4 +74,3 @@ func (v *OrderValidator) Validate(_ context.Context, order *domain.Order) error 
 
 	return nil
 }
-

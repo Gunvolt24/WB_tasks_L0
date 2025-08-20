@@ -38,9 +38,15 @@ func NewZapLogger(isProd bool) (*ZapLogger, func() error, error) {
 	return loggerWrap, cleanup, nil
 }
 
-func (z *ZapLogger) Infof(_ context.Context, format string, args ...any) { z.sugar.Infof(format, args...) }
-func (z *ZapLogger) Warnf(_ context.Context, format string, args ...any) { z.sugar.Warnf(format, args...) }
-func (z *ZapLogger) Errorf(_ context.Context, format string, args ...any) { z.sugar.Errorf(format, args...) }
+func (z *ZapLogger) Infof(_ context.Context, format string, args ...any) {
+	z.sugar.Infof(format, args...)
+}
+func (z *ZapLogger) Warnf(_ context.Context, format string, args ...any) {
+	z.sugar.Warnf(format, args...)
+}
+func (z *ZapLogger) Errorf(_ context.Context, format string, args ...any) {
+	z.sugar.Errorf(format, args...)
+}
 
-func (z *ZapLogger) Base() *zap.Logger { return z.base }
+func (z *ZapLogger) Base() *zap.Logger           { return z.base }
 func (z *ZapLogger) Sugared() *zap.SugaredLogger { return z.sugar }

@@ -27,19 +27,19 @@ var (
 )
 
 var (
-    CacheOps = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "cache_operations_total",
-            Help: "Cache operations",
-        },
-        []string{"op"}, // hit|miss|evicted|expired
-    )
-    CacheSize = prometheus.NewGauge(
-        prometheus.GaugeOpts{
-            Name: "cache_size",
-            Help: "Number of items currently in cache",
-        },
-    )
+	CacheOps = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cache_operations_total",
+			Help: "Cache operations",
+		},
+		[]string{"op"}, // hit|miss|evicted|expired
+	)
+	CacheSize = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "cache_size",
+			Help: "Number of items currently in cache",
+		},
+	)
 )
 
 func MustRegister() {

@@ -39,7 +39,7 @@ type Config struct {
 	Cache    Cache
 }
 
-func Load() (Config, error) { 
+func Load() (Config, error) {
 	var c Config
 
 	if err := envconfig.Process("ORDER", &c); err != nil {

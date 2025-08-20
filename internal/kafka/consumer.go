@@ -36,9 +36,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 			c.log.Warnf(ctx, "consumer fetch message err=%v", err)
 			select {
-				case <- ctx.Done():
-					return ctx.Err()
-				case <- time.After(300 *time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(300 * time.Second):
 			}
 			continue
 		}

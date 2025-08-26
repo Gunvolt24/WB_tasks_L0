@@ -10,11 +10,11 @@ RUN go mod download
 
 # собираем приложение
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags=otel -o /out/server ./cmd/server
 
 ### runtime-stage
 FROM alpine:3.20
-# необязательно, но приятнее
+
 RUN adduser -D -g '' appuser
 WORKDIR /app
 

@@ -1,13 +1,12 @@
-version: '3'
+version: "3"
 
 vars:
   COMPOSE: docker compose
   API: http://localhost:8081
   UID: b563feb7b2b84b6test
-  SAMPLE_FILE: kafka-model.json
+  SAMPLE_FILE: scripts\kafka-model.jsonl
 
 tasks:
-
   # --- инфраструктура ---
   up:
     desc: Build+Up всех сервисов (postgres, kafka(+ui), app, prometheus, grafana, migrate)
@@ -88,7 +87,11 @@ tasks:
         printf '{"order_uid":"cust-%s","track_number":"T-%s","entry":"WBIL","delivery":{"name":"N","phone":"+1","zip":"1","city":"C","address":"A","region":"R","email":"test@example.com"},"payment":{"transaction":"cust-%s","request_id":"","currency":"USD","provider":"wbpay","amount":1,"payment_dt":1,"bank":"b","delivery_cost":0,"goods_total":1,"custom_fee":0},"items":[{"chrt_id":1,"track_number":"T-%s","price":1,"rid":"rid1","name":"x","sale":0,"size":"0","total_price":1,"nm_id":1,"brand":"b","status":200}],"locale":"en","internal_signature":"","customer_id":"{{.CUSTOMER}}","delivery_service":"d","shardkey":"9","sm_id":1,"date_created":"2021-11-26T06:22:19Z","oof_shard":"1"}\n' \
           "{{.TS}}" "{{.TS}}" "{{.TS}}" "{{.TS}}" \
         | {{.COMPOSE}} exec -T kafka bash -lc 'kafka-console-producer --bootstrap-server kafka:9092 --topic orders'
-        
+
+  kafka:produce:file:
+    desc: "Отправить JSONL-файл в Kafka"
+    cmds:
+      - '{{.COMPOSE}} exec -T kafka bash -lc "kafka-console-producer --bootstrap-server kafka:9092 --topic orders" < {{.FILE}}'
 
   kafka:produce:invalid:
     desc: Отправить 1 битое сообщение (для инкремента ошибок)
@@ -106,6 +109,92 @@ tasks:
         {"order_uid":"ok-003","track_number":"T3","entry":"WBIL","delivery":{"name":"N","phone":"+1","zip":"1","city":"C","address":"A","region":"R","email":"test@example.com"},"payment":{"transaction":"ok-003","request_id":"","currency":"USD","provider":"wbpay","amount":1,"payment_dt":1,"bank":"b","delivery_cost":0,"goods_total":1,"custom_fee":0},"items":[{"chrt_id":3,"track_number":"T3","price":1,"rid":"rid3","name":"x","sale":0,"size":"0","total_price":1,"nm_id":3,"brand":"b","status":200}],"locale":"en","internal_signature":"","customer_id":"c","delivery_service":"d","shardkey":"9","sm_id":1,"date_created":"2021-11-26T06:22:19Z","oof_shard":"1"}
         EOF
         kafka-console-producer --bootstrap-server kafka:9092 --topic orders < /tmp/valid.jsonl'
+
+  mocks:install:
+    desc: Install mockgen tool
+    cmds:
+      - go install github.com/golang/mock/mockgen@latest
+
+  mocks:gen:
+    desc: Generate GoMock mocks
+    deps: [mocks:install]
+    cmds:
+      - go generate -v ./internal/ports/mocks
+    sources:
+      - internal/ports/*.go
+      - internal/ports/mocks/generate.go
+    generates:
+      - internal/ports/mocks/mock_*.go
+
+  test:
+    cmds:
+      - go test ./... -race
+
+  # Покрытие + сводка по функциям
+  cover:
+    cmds:
+      - go test ./... -race -covermode=atomic -coverprofile=coverage.out
+      - go tool cover -func=coverage.out
+
+  # HTML-отчёт (откроется в браузере, если есть xdg-open/start)
+  cover:html:
+    cmds:
+      - go test ./... -race -covermode=atomic -coverprofile=coverage.out
+      - go tool cover -html=coverage.out -o coverage.html
+      - |
+        {{if eq OS "windows"}}start coverage.html{{else}}xdg-open coverage.html || open coverage.html{{end}}
+
+  # --- Линтеры ---
+
+  lint:install:
+    desc: Install latest golangci-lint
+    cmds:
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+  lint:
+    desc: Run golangci-lint on all packages
+    cmds:
+      - golangci-lint run
+
+  lint:fix:
+    desc: Run golangci-lint with autofix (where supported)
+    cmds:
+      - golangci-lint run --fix
+
+  lint:verbose:
+    desc: Run golangci-lint verbosely and show resources usage
+    cmds:
+      - golangci-lint run -v --print-resources-usage
+
+  # --- Форматирование ---
+  fmt:install:
+    desc: Install goimports
+    cmds:
+      - go install golang.org/x/tools/cmd/goimports@latest
+
+  fmt:
+    desc: gofmt + goimports (упорядочить импорты и форматнуть код)
+    cmds:
+      - gofmt -s -w .
+      - goimports -w .
+
+  fmt:check:
+    desc: Check formatting only (CI-friendly)
+    cmds:
+      - |
+        UNFMT=$(gofmt -l .)
+        if [ -n "$UNFMT" ]; then
+          echo "Unformatted by gofmt:"
+          echo "$UNFMT"
+          exit 1
+        fi
+      - |
+        UNIMP=$(goimports -l .)
+        if [ -n "$UNIMP" ]; then
+          echo "Unformatted imports (goimports):"
+          echo "$UNIMP"
+          exit 1
+        fi
 
   # --- Быстрый сценарий ---
   demo:

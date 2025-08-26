@@ -28,6 +28,18 @@ go.work.sum
 .env.local
 .env.compose
 
+# go-task state
+.task/
+
+# vscode
+.vscode/
+
+# linter
+.golangci.yml
+
+# bin
+bin
+
 # Editor/IDE
 # .idea/
 # .vscode/

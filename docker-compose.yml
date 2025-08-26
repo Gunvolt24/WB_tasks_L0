@@ -92,6 +92,8 @@ services:
         condition: service_completed_successfully
       kafka:
         condition: service_started
+      jaeger:
+        condition: service_started
     env_file:
       - ./.env.compose
     ports:
@@ -119,6 +121,16 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    container_name: orders-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true      # включает OTLP (4317/4318)
+    ports:
+      - "16686:16686"    # UI
+      - "4318:4318"      # OTLP/HTTP endpoint
     restart: unless-stopped
 
 volumes:

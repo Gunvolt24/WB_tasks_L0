@@ -1,54 +1,89 @@
 package rest
 
 import (
+	"context"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/Gunvolt24/wb_l0/internal/ports"
-	"github.com/Gunvolt24/wb_l0/internal/usecase"
+	"github.com/Gunvolt24/wb_l0/pkg/httpx"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
+// Handler — обработчик HTTP-запросов.
 type Handler struct {
-	service *usecase.OrderService
-	log     ports.Logger
+	service    ports.OrderReadService
+	log        ports.Logger
+	reqTimeout time.Duration // таймаут на обработку запроса
 }
 
-func NewHandler(service *usecase.OrderService, log ports.Logger) *Handler {
-	return &Handler{service: service, log: log}
+// NewHandler — DI-конструктор. Если reqTimeout <= 0, ставим дефолт 3s.
+func NewHandler(service ports.OrderReadService, log ports.Logger, reqTimeout time.Duration) *Handler {
+	if reqTimeout <= 0 {
+		reqTimeout = 3 * time.Second
+	}
+	return &Handler{service: service, log: log, reqTimeout: reqTimeout}
 }
 
-func NewRouter(h *Handler, staticDir string) *gin.Engine {
-	r := gin.New()
-	r.Use(gin.Recovery())
-	r.Use(requsetLogger(h.log))
+// NewRouter — сборка роутера gin: middleware, эндпоинты API и статика.
+// Порядок: Recovery → otelgin → RequestID → RequestLogger (trace_id попадёт в логи).
+func NewRouter(h *Handler, staticDir, otelServiceName string) *gin.Engine {
+	r := gin.New()                     // Создаём роутер
+	r.Use(gin.Recovery())              // Подключаем middleware Recovery
+	r.Use(httpx.RequestIDMiddleware()) // Кладём request_id в контекст и заголовок
 
-	r.GET("/ping", func(c *gin.Context) { c.String(200, "pong") })
+	// healthcheck/metrics
+	r.GET("/ping", func(c *gin.Context) { c.String(http.StatusOK, "pong") })
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	r.GET("/order/:id", h.getOrderByID)
-	r.GET("/customer/:id/orders", h.listOrdersByCustomer)
+	// API (трейсинг только на этой группе)
+	api := r.Group("/",
+		otelgin.Middleware(otelServiceName),
+		httpx.RequestLogger(h.log),
+	)
+	api.GET("/order/:id", h.getOrderByID)
+	api.GET("/customer/:id/orders", h.listOrdersByCustomer)
 
+	// Static (простая веб-страница)
 	if staticDir != "" {
 		r.Static("/static", staticDir)
 		r.StaticFile("/", filepath.Join(staticDir, "index.html"))
 	}
 
+	// 404 для неизвестных маршрутов
+	r.NoRoute(func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "route not found"})
+	})
+
+	// 405 для неподдерживаемых методов (разрешаем только GET)
+	r.HandleMethodNotAllowed = true
+	r.NoMethod(func(c *gin.Context) {
+		c.Header("Allow", "GET")
+		c.AbortWithStatusJSON(http.StatusMethodNotAllowed, gin.H{"error": "method not allowed"})
+	})
+
 	return r
 }
 
+// getOrderByID — обработчик GET-запроса /order/:id.
+// Возвращает JSON заказа, 404 если не найден, 500 при внутренней ошибке.
+// На время обработки ограничиваем контекст таймаутом, чтобы не зависнуть на БД/кэше.
 func (h *Handler) getOrderByID(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty id"})
 		return
 	}
-	order, err := h.service.GetOrder(c.Request.Context(), id)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.reqTimeout)
+	defer cancel()
+
+	order, err := h.service.GetOrder(ctx, id)
 	if err != nil {
-		h.log.Errorf(c.Request.Context(), "GetOrder failed id=%s err=%v", id, err)
+		h.log.Errorf(ctx, "GetOrder failed id=%s err=%v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -59,6 +94,8 @@ func (h *Handler) getOrderByID(c *gin.Context) {
 	c.JSON(http.StatusOK, order)
 }
 
+// listOrdersByCustomer — GET /customer/:id/orders?limit=&offset=.
+// Возвращает 200 с массивом; 400 — при пустом id; 500 — при ошибке. Пагинация через limit/offset
 func (h *Handler) listOrdersByCustomer(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -66,31 +103,22 @@ func (h *Handler) listOrdersByCustomer(c *gin.Context) {
 		return
 	}
 
-	// limit/offset с безопасными дефолтами и границами
-	limit := 20
-	if v, err := strconv.Atoi(c.DefaultQuery("limit", "20")); err == nil && v > 0 && v <= 100 {
-		limit = v
-	}
-	offset := 0
-	if v, err := strconv.Atoi(c.DefaultQuery("offset", "0")); err == nil && v >= 0 {
-		offset = v
-	}
+	// Пагинация с безопасными дефолтами и границами
+	const (
+		defaultLimit = 20
+		maxLimit     = 100
+	)
+	limit, offset := httpx.ParseLimitOffset(c, defaultLimit, maxLimit)
 
-	orders, err := h.service.OrdersByCustomer(c.Request.Context(), id, limit, offset)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.reqTimeout)
+	defer cancel()
+
+	orders, err := h.service.OrdersByCustomer(ctx, id, limit, offset)
 	if err != nil {
-		h.log.Errorf(c.Request.Context(), "OrdersByCustomer failed id=%s err=%v", id, err)
+		h.log.Errorf(ctx, "OrdersByCustomer failed id=%s err=%v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	c.JSON(http.StatusOK, orders)
-}
-
-func requsetLogger(log ports.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-		duration := time.Since(start)
-		log.Infof(c.Request.Context(), "request method=%s path=%s status=%d duration=%s", c.Request.Method, c.FullPath(), c.Writer.Status(), duration)
-	}
 }

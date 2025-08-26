@@ -20,7 +20,8 @@ ALTER TABLE orders
   ON UPDATE CASCADE
   ON DELETE RESTRICT;
 
-CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_date_uid
+  ON orders (customer_id, date_created DESC, order_uid DESC);
 
 -- 4) Делаем customer_id обязательным 
 ALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;
@@ -29,7 +30,7 @@ ALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;
 -- +goose Down
 -- +goose StatementBegin
 ALTER TABLE orders ALTER COLUMN customer_id DROP NOT NULL;
-DROP INDEX IF EXISTS idx_orders_customer_id;
+DROP INDEX IF EXISTS idx_orders_customer_date_uid;
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS fk_orders_customer;
 DROP TABLE IF EXISTS customers;
 -- +goose StatementEnd

@@ -15,7 +15,14 @@ func newOrder(id string) *domain.Order {
 	}
 }
 
-func TestSetGet_HitMiss(t *testing.T) {
+func mustSet(t *testing.T, c *LRUCacheTTL, order *domain.Order) {
+	t.Helper()
+	if err := c.Set(context.Background(), order); err != nil {
+		t.Fatalf("Set(%q) error: %v", order.OrderUID, err)
+	}
+}
+
+func TestGetSet_HitMiss(t *testing.T) {
 	c := NewLRUCacheTTL(2, 5*time.Minute)
 	ctx := context.Background()
 
@@ -25,7 +32,7 @@ func TestSetGet_HitMiss(t *testing.T) {
 	}
 
 	// hit после Set
-	_ = c.Set(ctx, newOrder("id-1"))
+	mustSet(t, c, newOrder("id-1"))
 	got, ok := c.Get(ctx, "id-1")
 	if !ok || got.OrderUID != "id-1" {
 		t.Fatalf("expected hit for id-1")
@@ -36,7 +43,7 @@ func TestTTL_Expiry(t *testing.T) {
 	c := NewLRUCacheTTL(2, 100*time.Millisecond)
 	ctx := context.Background()
 
-	_ = c.Set(ctx, newOrder("ttl"))
+	mustSet(t, c, newOrder("ttl"))
 	if _, ok := c.Get(ctx, "ttl"); !ok {
 		t.Fatalf("expected hit right after Set")
 	}
@@ -47,17 +54,17 @@ func TestTTL_Expiry(t *testing.T) {
 }
 
 func TestLRUEviction(t *testing.T) {
-	c := NewLRUCacheTTL(2, 0) // 0 = без TTL
+	c := NewLRUCacheTTL(2, 0)
 	ctx := context.Background()
 
-	_ = c.Set(ctx, newOrder("A"))
-	_ = c.Set(ctx, newOrder("B"))
-	// A сделать «свежим»
+	mustSet(t, c, newOrder("A"))
+	mustSet(t, c, newOrder("B"))
+	// Сделать свежим значение "A"
 	if _, ok := c.Get(ctx, "A"); !ok {
 		t.Fatalf("expected hit for A")
 	}
-	// Добавляем C — вытеснит B (самый старый)
-	_ = c.Set(ctx, newOrder("C"))
+	// Добавляем "C" — вытеснит "B" (самый старый)
+	mustSet(t, c, newOrder("C"))
 
 	if _, ok := c.Get(ctx, "B"); ok {
 		t.Fatalf("expected B to be evicted")
@@ -68,17 +75,19 @@ func TestLRUEviction(t *testing.T) {
 }
 
 func TestCloneImmutability(t *testing.T) {
+	const changedName = "changed"
+
 	c := NewLRUCacheTTL(1, 0)
 	ctx := context.Background()
 	orig := newOrder("Z")
-	_ = c.Set(ctx, orig)
+	mustSet(t, c, orig)
 
 	// меняем то, что вернул Get — не должно влиять на кэш
 	o1, _ := c.Get(ctx, "Z")
-	o1.Items[0].Name = "changed"
+	o1.Items[0].Name = changedName
 
 	o2, _ := c.Get(ctx, "Z")
-	if o2.Items[0].Name == "changed" {
+	if o2.Items[0].Name == changedName {
 		t.Fatalf("cache should return clones, not pointers to internal value")
 	}
 }

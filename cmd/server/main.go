@@ -2,20 +2,14 @@ package main
 
 import (
 	"context"
-	"log"
 	"os/signal"
 	"syscall"
 
 	"github.com/Gunvolt24/wb_l0/config"
 	"github.com/Gunvolt24/wb_l0/internal/app"
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	if err := godotenv.Load(".env.local"); err != nil {
-		log.Printf("godotenv: %v", err)
-	}
-
 	// Контекст для остановки приложения
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

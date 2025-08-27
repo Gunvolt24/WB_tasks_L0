@@ -41,13 +41,13 @@ var KafkaMessagesFailed = prometheus.NewCounterVec(
 // -------------- Cache --------------
 
 // CacheOps — счётчик операций кэша.
-// Лейбл "op" принимает ограниченный набор значений: hit|miss|expired.
+// Лейбл "op" принимает ограниченный набор значений: hit|miss|evicted|expired.
 var CacheOps = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "cache_operations_total",
 		Help: "Cache operations",
 	},
-	[]string{"op"}, // hit|miss|expired
+	[]string{"op"}, // hit|miss|evicted|expired
 )
 
 // CacheSize — текущий размер кэша (количество элементов).

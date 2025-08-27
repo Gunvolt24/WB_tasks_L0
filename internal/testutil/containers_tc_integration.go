@@ -16,9 +16,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// ----------------------------------------------------------------------------
-// Красивые логи жизненного цикла
-// ----------------------------------------------------------------------------
+// ------------------  Красивые логи жизненного цикла ----------------
 
 func shortID(c tc.Container) string {
 	id := c.GetContainerID()
@@ -76,12 +74,10 @@ func logHooks(l *log.Logger) tc.ContainerLifecycleHooks {
 	}
 }
 
-// Общий логгер для testcontainers (можно подключить свой)
+// Общий логгер для testcontainers
 var tcLogger = log.New(os.Stdout, "[tc] ", log.LstdFlags)
 
-// ----------------------------------------------------------------------------
-// Postgres
-// ----------------------------------------------------------------------------
+// -----------------------------  Postgres -------------------------------
 
 type PGContainer struct {
 	Container *postgres.PostgresContainer
@@ -93,15 +89,13 @@ func StartPostgresTC(ctx context.Context) (*PGContainer, func(context.Context) e
 	pg, err := postgres.Run(
 		ctx,
 		"postgres:16-alpine",
-		// красиво логируем этапы жизни контейнера
 		tc.WithLifecycleHooks(logHooks(tcLogger)),
-		// обязательно экспонируем 5432
 		tc.WithExposedPorts("5432/tcp"),
 		// базовые параметры БД
 		postgres.WithDatabase("orders"),
 		postgres.WithUsername("app"),
 		postgres.WithPassword("app"),
-		// подождём, пока порт начнёт слушаться и Postgres поднимется
+		// ждем, пока порт начнёт слушаться и Postgres поднимется
 		tc.WithWaitStrategy(
 			wait.ForAll(
 				wait.ForListeningPort("5432/tcp"),
@@ -113,7 +107,7 @@ func StartPostgresTC(ctx context.Context) (*PGContainer, func(context.Context) e
 		return nil, nil, fmt.Errorf("run postgres: %w", err)
 	}
 
-	// Готовый DSN от контейнера (учтёт реальный host:port)
+	// Готовый DSN от контейнера
 	dsn, err := pg.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		_ = pg.Terminate(ctx)
@@ -143,9 +137,7 @@ func StartPostgresTC(ctx context.Context) (*PGContainer, func(context.Context) e
 	return &PGContainer{Container: pg, DSN: dsn, Pool: pool}, stop, nil
 }
 
-// ----------------------------------------------------------------------------
-// Kafka
-// ----------------------------------------------------------------------------
+// -----------------------------  Kafka -------------------------------
 
 type KafkaEnv struct {
 	Container *redpanda.Container
@@ -164,7 +156,7 @@ func StartKafkaTC(ctx context.Context, baseTopic string) (*KafkaEnv, func(contex
 		return nil, nil, fmt.Errorf("run redpanda: %w", err)
 	}
 
-	seed, err := rp.KafkaSeedBroker(ctx) // вернёт "host:port" для клиента
+	seed, err := rp.KafkaSeedBroker(ctx)
 	if err != nil {
 		_ = tc.TerminateContainer(rp)
 		return nil, nil, fmt.Errorf("seed broker: %w", err)

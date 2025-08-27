@@ -110,6 +110,14 @@ tasks:
         EOF
         kafka-console-producer --bootstrap-server kafka:9092 --topic orders < /tmp/valid.jsonl'
 
+  kafka:send-jsonl:
+    desc: "Отправить JSONL в Kafka (через скрипт)"
+    vars:
+      TOPIC: orders
+      FILE: scripts/kafka-model.jsonl
+    cmds:
+      - '"C:/Program Files/Git/bin/bash.exe" scripts/send_jsonl.sh {{.TOPIC}} {{.FILE}}'
+
   mocks:install:
     desc: Install mockgen tool
     cmds:

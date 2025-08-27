@@ -25,7 +25,7 @@ type OrderValidator struct{}
 // Возвращает ErrInvalidOrder (с обёрнутой причиной) при любой проблеме.
 func NewOrderValidator() *OrderValidator { return &OrderValidator{} }
 
-// Validate — проверяет корректность полей заказа.
+// Validate — проверяет корректность полей заказа со стороны Consumer.
 func (v *OrderValidator) Validate(_ context.Context, order *domain.Order) error {
 	if err := v.validateCore(order); err != nil {
 		return err
